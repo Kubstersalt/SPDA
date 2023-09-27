@@ -15,12 +15,16 @@ redirect_uri = os.getenv("SPOTIPY_REDIRECT_URI")
 #Creates object which automatically applies creates and applies token for general search
 spotify = spotipy.Spotify(client_credentials_manager=SpotifyClientCredentials(client_id=client_id, client_secret=client_secret))
 #Same idea but for specific user requests
-scope = "user-read-currently-playing"
+scope = "user-read-recently-played"
 user = spotipy.Spotify(auth_manager=SpotifyOAuth(scope=scope))
 
-def update(current_id):
-    track = user.current_user_playing_track()
+def get_recent(user):
+    tracks = user.current_user_recently_played(limit=10)
+    print(tracks["items"][0]["track"]["id"])
+    with open("recently_listened", "w") as outfile:
+        json.dump(tracks, outfile)
 
 def main():
+    get_recent(user)
 
 main()
