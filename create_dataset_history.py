@@ -5,6 +5,8 @@ import json
 import spotipy
 from spotipy.oauth2 import SpotifyClientCredentials, SpotifyOAuth
 import time
+from datetime import datetime, timezone
+from dateutil.parser import isoparse
 
 #Load in environment variables
 load_dotenv()
@@ -19,12 +21,21 @@ scope = "user-read-recently-played"
 user = spotipy.Spotify(auth_manager=SpotifyOAuth(scope=scope))
 
 def get_recent(user):
-    tracks = user.current_user_recently_played(limit=10)
-    print(tracks["items"][0]["track"]["id"])
+    #Very ugly timezone adjustment
+    timestamp = (int(datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0).timestamp())-60*60*2)
+    tracks = user.current_user_recently_played(after=timestamp*1000)
+    size = len(tracks["items"])
+    print(f"Batch size: {size}")
+    name_last = tracks["items"][size-1]["track"]["name"]
+    
+    latest_date = int(isoparse(tracks["items"][size-1]["played_at"]).timestamp())
     with open("recently_listened", "w") as outfile:
         json.dump(tracks, outfile)
+    print(f"Starting from: {datetime.fromtimestamp(timestamp)}")
+    print(f"Last in batch: {datetime.fromtimestamp(latest_date)}")
+    print(f"Last song: {name_last}")
+    print(timestamp)
 
 def main():
     get_recent(user)
-
 main()
