@@ -32,25 +32,6 @@ limit = 200 #api lets you retrieve up to 200 records per call
 extended = 0 #api lets you retrieve extended data for each track, 0=no, 1=yes
 page = 1 #page of results to start retrieving at
 
-def get_top_tracks():
-    method = 'toptracks'
-    request_url = url.format(method, last_user, last_key, limit, extended, page)
-    artist_names = []
-    track_names = []
-    play_counts = []
-    response = requests.get(request_url).json()
-    for item in response[method]['track']:
-        artist_names.append(item['artist']['name'])
-        track_names.append(item['name'])
-        play_counts.append(item['playcount'])
-
-    top_tracks = pd.DataFrame()
-    top_tracks['artist'] = artist_names
-    top_tracks['track'] = track_names
-    top_tracks['play_count'] = play_counts
-    top_tracks.to_csv('lastfm_top_tracks.csv', index=None, encoding='utf-8')
-    print(top_tracks.head())
-
 def get_scrobbles(method='recenttracks', username=last_user, key=last_key, limit=200, extended=0, page=1, pages=0):
     '''
     method: api method
@@ -81,13 +62,11 @@ def get_scrobbles(method='recenttracks', username=last_user, key=last_key, limit
     print('{} total pages to retrieve'.format(total_pages))
     
     # request each page of data one at a time
-    i=1
     for page in range(1, int(total_pages) + 1, 1):
         time.sleep(pause_duration)
         request_url = url.format(method, last_user, last_key, limit, extended, page)
         responses.append(requests.get(request_url))
-        print(f"{i}/{total_pages}")
-        i+=1
+        print(f"{page}/{total_pages}")
     
     # parse the fields out of each scrobble in each page (aka response) of scrobbles
     for response in responses:
@@ -116,11 +95,180 @@ def get_scrobbles(method='recenttracks', username=last_user, key=last_key, limit
     
     return df
 
-def main():
-    #get_top_tracks()
-    scrobbles = get_scrobbles(pages=0)
-    scrobbles.to_csv('lastfm_scrobbles.csv', index=None, encoding='utf-8')
-    print('{:,} total rows'.format(len(scrobbles)))
-    scrobbles.head()
+def add_spotify_data(rows):
+    #Define what paramaters to save
+    danceability = []
+    energy = []
+    speechiness = []
+    acousticness = []
+    instrumentalness = []
+    liveness = []
+    valence = []
+    ids = []
+    tempo = []
+    duration = []
+    time_signature = []
+    key = []
+    loudness = []
+    mode = []
 
+    #Count the amount of times a specific error occurs:
+
+    df = pd.read_csv('lastfm_scrobbles.csv')
+    df = df.head(rows)
+    print(f"Dataset consists of {len(df)} rows.")
+    tracks = df["track"].tolist()
+    artists = df["artist"].tolist()
+    total_tracks = len(tracks)
+    errora = []
+    errorb = []
+    errora_count = 0
+    errorb_count = 0
+
+    for index in range(0, total_tracks):
+        time.sleep(pause_duration)
+        track = tracks[index]
+        artist = artists[index]
+        print(f"track: {track} artist: {artist}")
+
+        query = "artist:" + artist + " track:" + track
+        response = user.search(q=query, type='track')
+        
+        if response["tracks"]["items"]:
+            track_id = response["tracks"]["items"][0]["id"]
+            features = spotify.audio_features(track_id)[0]
+
+            danceability.append(features["danceability"])
+            energy.append(features["energy"])
+            speechiness.append(features["speechiness"])
+            acousticness.append(features["acousticness"])
+            instrumentalness.append(features["instrumentalness"])
+            liveness.append(features["liveness"])
+            valence.append(features["valence"])
+            ids.append(track_id)
+            tempo.append(features["tempo"])
+            duration.append(features["duration_ms"])
+            time_signature.append(features["time_signature"])
+            key.append(features["key"])
+            loudness.append(features["loudness"])
+            mode.append(features["mode"])
+
+        else:
+            print("Error: removing apostrophes from query")
+            errora.append(track)
+            errora_count += 1
+            track = track.replace("'","")
+            query = "artist:" + artist + " track:" + track
+            response = user.search(q=query, type='track')
+
+            if response["tracks"]["items"]:
+                track_id = response["tracks"]["items"][0]["id"]
+                features = spotify.audio_features(track_id)[0]
+
+                danceability.append(features["danceability"])
+                energy.append(features["energy"])
+                speechiness.append(features["speechiness"])
+                acousticness.append(features["acousticness"])
+                instrumentalness.append(features["instrumentalness"])
+                liveness.append(features["liveness"])
+                valence.append(features["valence"])
+                ids.append(track_id)
+                tempo.append(features["tempo"])
+                duration.append(features["duration_ms"])
+                time_signature.append(features["time_signature"])
+                key.append(features["key"])
+                loudness.append(features["loudness"])
+                mode.append(features["mode"])
+
+            else:
+                print("Error: skipped")
+                errorb.append(track)
+                errorb_count += 1
+                danceability.append("-")
+                energy.append("-")
+                speechiness.append("-")
+                acousticness.append("-")
+                instrumentalness.append("-")
+                liveness.append("-")
+                valence.append("-")
+                ids.append("-")
+                tempo.append("-")
+                duration.append("-")
+                time_signature.append("-")
+                key.append("-")
+                loudness.append("-")
+                mode.append("-")
+
+        print(f"{index+1}/{total_tracks}")
+    
+    df["track_id"] = ids
+    df["danceability"] = danceability
+    df["energy"] = energy
+    df["speechiness"] = speechiness
+    df["acousticness"] = acousticness
+    df["instrumentalness"] = instrumentalness
+    df["liveness"] = liveness
+    df["valence"] = valence
+    df["tempo"] = tempo
+    df["duration"] = duration
+    df["time_signature"] = time_signature
+    df["key"] = key
+    df["loudness"] = loudness
+    df["mode"] = mode
+
+    print(f"Error Type A (empty response):{errora_count}")
+    print(errora)
+    print(f"Error Type B (no response after removing apostrophe):{errorb_count}")
+    print(errorb)
+
+    return df
+
+def check_validity():
+    df = pd.read_csv('tracks_data.csv')
+    print(f"Dataset consists of {len(df)} rows.")
+
+    track_names = df["track"]
+    track_ids = df["track_id"]
+    artist_names = df["artist"]
+    total_tracks = len(track_names)
+    incorrect_track = 0
+    incorrect_artist = 0
+
+    for index in range(0, total_tracks):
+        retrieved_track_name = user.track(track_ids[index])["name"]
+        track_name = track_names[index]
+        retrieved_artist_name = user.track(track_ids[index])["artists"][0]["name"]
+        artist_name = artist_names[index]
+
+        print(f"{index+1}\{total_tracks}:")
+        if retrieved_track_name != track_name:
+            print(f"Track: {track_name} != {retrieved_track_name}")
+            incorrect_track += 1
+
+        if retrieved_artist_name != artist_name:
+            print(f"Artist: {artist_name} != {retrieved_artist_name}")
+            incorrect_artist += 1
+    print(f"Names: {incorrect_track} tracks are possibly not the same.")
+    print(f"Artists: {incorrect_artist} artists are possibly not the same.")
+    return
+
+
+def main():
+    cont = True
+    while cont:
+        select = int(input("Select what you want to do:\n1. Retrieve Last.FM scrobbles in CSV\n2. Collect Spotify Metrics based on scrobbles\n3. Check validity of spotify metric dataset\n4. Quit\n"))
+        if select==1:
+            scrobbles = get_scrobbles(pages=0)
+            scrobbles.to_csv('lastfm_scrobbles.csv', index=None, encoding='utf-8')
+            print('{:,} total rows'.format(len(scrobbles)))
+        elif select==2:
+            rows = int(input("How many rows?\n"))
+            added_data = add_spotify_data(rows)
+            added_data.to_csv('tracks_data.csv', index=None, encoding='utf-8')
+            print('{:,} total rows'.format(len(added_data)))
+        elif select==3:
+            check_validity()
+        elif select==4:
+            print("Bye Bye")
+            cont = False
 main()
