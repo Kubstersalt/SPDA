@@ -252,7 +252,6 @@ def check_validity():
     print(f"Artists: {incorrect_artist} artists are possibly not the same.")
     return
 
-
 def main():
     cont = True
     while cont:
@@ -271,4 +270,5 @@ def main():
         elif select==4:
             print("Bye Bye")
             cont = False
+
 main()
