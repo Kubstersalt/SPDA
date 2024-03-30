@@ -114,7 +114,7 @@ def add_spotify_data(rows):
 
     #Count the amount of times a specific error occurs:
 
-    df = pd.read_csv('lastfm_scrobbles.csv')
+    df = pd.read_csv('datasets/lastfm_scrobbles.csv')
     df = df.head(rows)
     print(f"Dataset consists of {len(df)} rows.")
     tracks = df["track"].tolist()
@@ -224,7 +224,7 @@ def add_spotify_data(rows):
     return df
 
 def check_validity():
-    df = pd.read_csv('tracks_data.csv')
+    df = pd.read_csv('datasets/tracks_data.csv')
     print(f"Dataset consists of {len(df)} rows.")
 
     track_names = df["track"]
@@ -259,12 +259,12 @@ def main():
         select = int(input("Select what you want to do:\n1. Retrieve Last.FM scrobbles in CSV\n2. Collect Spotify Metrics based on scrobbles\n3. Check validity of spotify metric dataset\n4. Quit\n"))
         if select==1:
             scrobbles = get_scrobbles(pages=0)
-            scrobbles.to_csv('lastfm_scrobbles.csv', index=None, encoding='utf-8')
+            scrobbles.to_csv('datasets/lastfm_scrobbles.csv', index=None, encoding='utf-8')
             print('{:,} total rows'.format(len(scrobbles)))
         elif select==2:
             rows = int(input("How many rows?\n"))
             added_data = add_spotify_data(rows)
-            added_data.to_csv('tracks_data.csv', index=None, encoding='utf-8')
+            added_data.to_csv('datasets/tracks_data.csv', index=None, encoding='utf-8')
             print('{:,} total rows'.format(len(added_data)))
         elif select==3:
             check_validity()
