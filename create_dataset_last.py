@@ -9,6 +9,7 @@ from dateutil.parser import isoparse
 import csv
 import requests
 import pandas as pd
+pd.options.mode.chained_assignment = None  # default='warn'
 
 #Load environment variables
 load_dotenv()
@@ -25,7 +26,7 @@ spotify = spotipy.Spotify(client_credentials_manager=SpotifyClientCredentials(cl
 scope = "user-read-recently-played"
 user = spotipy.Spotify(auth_manager=SpotifyOAuth(scope=scope))
 
-pause_duration = 0.2
+pause_duration = 0.1
 
 url = 'https://ws.audioscrobbler.com/2.0/?method=user.get{}&user={}&api_key={}&limit={}&extended={}&page={}&format=json'
 limit = 200 #api lets you retrieve up to 200 records per call
@@ -95,176 +96,155 @@ def get_scrobbles(method='recenttracks', username=last_user, key=last_key, limit
     
     return df
 
-def add_spotify_data(rows):
-    #Define what paramaters to save
-    danceability = []
-    energy = []
-    speechiness = []
-    acousticness = []
-    instrumentalness = []
-    liveness = []
-    valence = []
-    ids = []
-    tempo = []
-    duration = []
-    time_signature = []
-    key = []
-    loudness = []
-    mode = []
+def add_spotify_data():
+    '''
+    collect all data
+    rows: the amount of rows (head) from the lastfm_scrobbles file that you want corresponding spotify data for.
+    '''
 
-    #Count the amount of times a specific error occurs:
-
-    df = pd.read_csv('datasets/lastfm_scrobbles.csv')
-    df = df.head(rows)
-    print(f"Dataset consists of {len(df)} rows.")
-    tracks = df["track"].tolist()
-    artists = df["artist"].tolist()
-    total_tracks = len(tracks)
-    errora = []
-    errorb = []
-    errora_count = 0
-    errorb_count = 0
-
-    for index in range(0, total_tracks):
-        time.sleep(pause_duration)
-        track = tracks[index]
-        artist = artists[index]
-        print(f"track: {track} artist: {artist}")
-
-        query = "artist:" + artist + " track:" + track
-        response = user.search(q=query, type='track')
-        
-        if response["tracks"]["items"]:
-            track_id = response["tracks"]["items"][0]["id"]
-            features = spotify.audio_features(track_id)[0]
-
-            danceability.append(features["danceability"])
-            energy.append(features["energy"])
-            speechiness.append(features["speechiness"])
-            acousticness.append(features["acousticness"])
-            instrumentalness.append(features["instrumentalness"])
-            liveness.append(features["liveness"])
-            valence.append(features["valence"])
-            ids.append(track_id)
-            tempo.append(features["tempo"])
-            duration.append(features["duration_ms"])
-            time_signature.append(features["time_signature"])
-            key.append(features["key"])
-            loudness.append(features["loudness"])
-            mode.append(features["mode"])
+    def get_features(response, index, skip):
+        '''
+        Extract song's features from spotify API request response
+        response: result of API request
+        skip: if you want to skip the song and enter empty values in dataframe
+        '''
+        if skip:
+            df["danceability"][index] = "-"
+            df["energy"][index] = "-"
+            df["speechiness"][index] = "-"
+            df["acousticness"][index] = "-"
+            df["instrumentalness"][index] = "-"
+            df["liveness"][index] = "-"
+            df["valence"][index] = "-"
+            df["ids"][index] = "-"
+            df["tempo"][index] = "-"
+            df["duration"][index] = "-"
+            df["time_signature"][index] = "-"
+            df["key"][index] = "-"
+            df["loudness"][index] = "-"
+            df["mode"][index] = "-"
 
         else:
-            print("Error: removing apostrophes from query")
-            errora.append(track)
-            errora_count += 1
+            track_id = response["tracks"]["items"][0]["id"]
+            features = spotify.audio_features(track_id)[0]
+            if features:
+                df["danceability"][index] = features["danceability"]
+                df["energy"][index] = features["energy"]
+                df["speechiness"][index] = features["speechiness"]
+                df["acousticness"][index] = features["acousticness"]
+                df["instrumentalness"][index] = features["instrumentalness"]
+                df["liveness"][index] = features["liveness"]
+                df["valence"][index] = features["valence"]
+                df["ids"][index] = track_id
+                df["tempo"][index] = features["tempo"]
+                df["duration"][index] = features["duration_ms"]
+                df["time_signature"][index] = features["time_signature"]
+                df["key"][index] = features["key"]
+                df["loudness"][index] = features["loudness"]
+                df["mode"][index] = features["mode"]
+            else:
+                df["error"][index] = "C"
+                get_features(response, index, True)
+        return
+    
+    #check if lastfm_scrobbles.csv exists to load in
+    try:
+        #load in lastfm_scrobbles.csv
+        df = pd.read_csv('datasets/tracks_data.csv')
+        print("Loaded previous tracks data file succesfully")
+    except:
+        print("tracks_data.csv does not exist, trying to create it from lastfm_scrobbles.csv")
+        df = pd.read_csv('datasets/lastfm_scrobbles.csv')
+        placeholder_list = [None for _ in range(len(df))]
+        df["danceability"] = placeholder_list
+        df["energy"] = placeholder_list
+        df["speechiness"] = placeholder_list
+        df["acousticness"] = placeholder_list
+        df["instrumentalness"] = placeholder_list
+        df["liveness"] = placeholder_list
+        df["valence"] = placeholder_list
+        df["ids"] = placeholder_list
+        df["tempo"] = placeholder_list
+        df["duration"] = placeholder_list
+        df["time_signature"] = placeholder_list
+        df["loudness"] = placeholder_list
+        df["key"] = placeholder_list
+        df["mode"] = placeholder_list
+        df["error"] = placeholder_list
+
+    #Now start by finding where to begin
+    i=0
+    for value in df["error"]:
+        if (isinstance(value, str)==False):
+            start_index = i
+            break
+        else:
+            i+=1
+    print(f"starting at {start_index}")
+
+    #Continue at start_index, replace entries at row-index of dataframe with retrieved data
+    pause_duration = 0.00125
+    start_time = time.time()
+    for index in range(start_index, len(df)):
+        time.sleep(pause_duration)
+
+        track = df["track"][index]
+        artist = df["artist"][index]
+
+        query = "artist:" + artist + " track:" + track
+
+        response = user.search(q=query, type='track')
+        if response["tracks"]["items"]:
+            get_features(response, index, False)
+            df["error"][index] = "-"
+
+        else:
+            #print("Error: removing apostrophes from query")
+            df["error"][index] = "A"
             track = track.replace("'","")
             query = "artist:" + artist + " track:" + track
             response = user.search(q=query, type='track')
 
             if response["tracks"]["items"]:
-                track_id = response["tracks"]["items"][0]["id"]
-                features = spotify.audio_features(track_id)[0]
-
-                danceability.append(features["danceability"])
-                energy.append(features["energy"])
-                speechiness.append(features["speechiness"])
-                acousticness.append(features["acousticness"])
-                instrumentalness.append(features["instrumentalness"])
-                liveness.append(features["liveness"])
-                valence.append(features["valence"])
-                ids.append(track_id)
-                tempo.append(features["tempo"])
-                duration.append(features["duration_ms"])
-                time_signature.append(features["time_signature"])
-                key.append(features["key"])
-                loudness.append(features["loudness"])
-                mode.append(features["mode"])
+                get_features(response, index, False)
 
             else:
-                print("Error: skipped")
-                errorb.append(track)
-                errorb_count += 1
-                danceability.append("-")
-                energy.append("-")
-                speechiness.append("-")
-                acousticness.append("-")
-                instrumentalness.append("-")
-                liveness.append("-")
-                valence.append("-")
-                ids.append("-")
-                tempo.append("-")
-                duration.append("-")
-                time_signature.append("-")
-                key.append("-")
-                loudness.append("-")
-                mode.append("-")
+                #print("Error: skipped")
+                df["error"][index] = "B"
+                get_features(response, index, True)
 
-        print(f"{index+1}/{total_tracks}")
+        #Overwrite tracks_data.csv every n amount of indices
+        if ((index+1)%500==0):
+            end_time = time.time()
+            df.to_csv('datasets/tracks_data.csv', index=None, encoding='utf-8')
+            print(f"{index+1}/{len(df)} done!")
+            print(f"It took {end_time - start_time} ms")
+            #pause_duration = pause_duration/2
+            print(f"New pause duration to test: {pause_duration}")
+            print("Saved progress! Continuing...")
+            start_time = time.time()
     
-    df["track_id"] = ids
-    df["danceability"] = danceability
-    df["energy"] = energy
-    df["speechiness"] = speechiness
-    df["acousticness"] = acousticness
-    df["instrumentalness"] = instrumentalness
-    df["liveness"] = liveness
-    df["valence"] = valence
-    df["tempo"] = tempo
-    df["duration"] = duration
-    df["time_signature"] = time_signature
-    df["key"] = key
-    df["loudness"] = loudness
-    df["mode"] = mode
+    #final save
+    df.to_csv('datasets/tracks_data.csv', index=None, encoding='utf-8')
 
-    print(f"Error Type A (empty response):{errora_count}")
-    print(errora)
-    print(f"Error Type B (no response after removing apostrophe):{errorb_count}")
-    print(errorb)
-
-    return df
+    return
 
 def check_validity():
-    df = pd.read_csv('datasets/tracks_data.csv')
-    print(f"Dataset consists of {len(df)} rows.")
 
-    track_names = df["track"]
-    track_ids = df["track_id"]
-    artist_names = df["artist"]
-    total_tracks = len(track_names)
-    incorrect_track = 0
-    incorrect_artist = 0
-
-    for index in range(0, total_tracks):
-        retrieved_track_name = user.track(track_ids[index])["name"]
-        track_name = track_names[index]
-        retrieved_artist_name = user.track(track_ids[index])["artists"][0]["name"]
-        artist_name = artist_names[index]
-
-        print(f"{index+1}\{total_tracks}:")
-        if retrieved_track_name != track_name:
-            print(f"Track: {track_name} != {retrieved_track_name}")
-            incorrect_track += 1
-
-        if retrieved_artist_name != artist_name:
-            print(f"Artist: {artist_name} != {retrieved_artist_name}")
-            incorrect_artist += 1
-    print(f"Names: {incorrect_track} tracks are possibly not the same.")
-    print(f"Artists: {incorrect_artist} artists are possibly not the same.")
     return
 
 def main():
     cont = True
     while cont:
-        select = int(input("Select what you want to do:\n1. Retrieve Last.FM scrobbles in CSV\n2. Collect Spotify Metrics based on scrobbles\n3. Check validity of spotify metric dataset\n4. Quit\n"))
+        select = int(input("Select what you want to do:\n1. Retrieve Last.FM scrobbles in CSV\n2. Collect spotify metrics for entire scrobbles dataset\n3. Check Validity\n4. Quit\n"))
         if select==1:
             scrobbles = get_scrobbles(pages=0)
             scrobbles.to_csv('datasets/lastfm_scrobbles.csv', index=None, encoding='utf-8')
             print('{:,} total rows'.format(len(scrobbles)))
         elif select==2:
-            rows = int(input("How many rows?\n"))
-            added_data = add_spotify_data(rows)
-            added_data.to_csv('datasets/tracks_data.csv', index=None, encoding='utf-8')
-            print('{:,} total rows'.format(len(added_data)))
+            add_spotify_data()
+            #added_data.to_csv('datasets/tracks_data.csv', index=None, encoding='utf-8')
+            #print('{:,} total rows'.format(len(added_data)))
         elif select==3:
             check_validity()
         elif select==4:
